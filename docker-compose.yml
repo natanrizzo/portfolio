@@ -1,0 +1,116 @@
+name: portfolio
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-portfolio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-portfolio}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - internal
+    # Never published to the host. Only the app and the backup job reach it.
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-portfolio}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    image: ${APP_IMAGE:-portfolio-app:local}
+    build:
+      context: .
+      target: runner
+      args:
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
+        NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME: ${NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-portfolio}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-portfolio}
+      AUTH_SECRET: ${AUTH_SECRET:?defina AUTH_SECRET no .env}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
+      NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME: ${NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
+      CLOUDINARY_FOLDER: ${CLOUDINARY_FOLDER:-portfolio}
+    networks:
+      - internal
+      - traefik
+    # No `ports:` on purpose. Traefik reaches the container over its own
+    # network, so nothing about this app is exposed directly on the host.
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: ${TRAEFIK_NETWORK:-traefik}
+      # Defaults to localhost so `docker compose` works locally without a
+      # domain. In production SITE_DOMAIN must be set, or Traefik will not
+      # route your real hostname to this container.
+      traefik.http.routers.portfolio.rule: Host(`${SITE_DOMAIN:-localhost}`)
+      traefik.http.routers.portfolio.entrypoints: ${TRAEFIK_ENTRYPOINT:-websecure}
+      traefik.http.routers.portfolio.tls: "true"
+      traefik.http.routers.portfolio.tls.certresolver: ${TRAEFIK_CERTRESOLVER:-letsencrypt}
+      traefik.http.services.portfolio.loadbalancer.server.port: "3000"
+      # HSTS is set here rather than in next.config so it only applies once the
+      # site is actually being served over TLS by Traefik.
+      traefik.http.middlewares.portfolio-hsts.headers.stsSeconds: "31536000"
+      traefik.http.middlewares.portfolio-hsts.headers.stsIncludeSubdomains: "true"
+      traefik.http.routers.portfolio.middlewares: portfolio-hsts
+
+  # One-shot. Run with: docker compose run --rm migrate
+  migrate:
+    image: ${MIGRATOR_IMAGE:-portfolio-migrator:local}
+    build:
+      context: .
+      target: migrator
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-portfolio}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-portfolio}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_NAME: ${ADMIN_NAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+    networks:
+      - internal
+    restart: "no"
+
+  # Nightly pg_dump into a local volume, keeping the last 14 days.
+  backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgbackups:/backups
+    networks:
+      - internal
+    entrypoint: >
+      sh -c "while true; do
+        pg_dump -h db -U ${POSTGRES_USER:-portfolio} -d ${POSTGRES_DB:-portfolio}
+          | gzip > /backups/portfolio-$$(date +%Y%m%d-%H%M).sql.gz;
+        find /backups -name '*.sql.gz' -mtime +14 -delete;
+        sleep 86400;
+      done"
+
+networks:
+  internal:
+    driver: bridge
+  # The network your existing Traefik instance already runs on. It is declared
+  # external so this stack joins it instead of trying to create it.
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik}
+
+volumes:
+  pgdata:
+  pgbackups:

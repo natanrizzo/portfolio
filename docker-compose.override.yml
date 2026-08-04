@@ -1,0 +1,24 @@
+# Development only.
+#
+# Docker Compose loads this file automatically on top of docker-compose.yml when
+# you run `docker compose` locally. The deploy workflow only copies
+# docker-compose.yml to the VPS, so none of this reaches production.
+#
+# It exists to publish the Postgres port on the host, which `npm run dev` needs
+# to connect. In production the database stays unreachable from outside the
+# Docker network on purpose.
+
+services:
+  db:
+    ports:
+      # High port by default: 5432 usually belongs to a Postgres already
+      # installed on the host, and Windows reserves scattered ranges near it.
+      # Keep DB_PORT and the port in DATABASE_URL in sync.
+      - "127.0.0.1:${DB_PORT:-15432}:5432"
+
+  # Not used locally: `npm run dev` runs the app on the host.
+  app:
+    profiles: ["never"]
+
+  backup:
+    profiles: ["never"]
