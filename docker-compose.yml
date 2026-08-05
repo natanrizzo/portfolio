@@ -93,13 +93,18 @@ services:
       - pgbackups:/backups
     networks:
       - internal
-    entrypoint: >
-      sh -c "while true; do
-        pg_dump -h db -U ${POSTGRES_USER:-portfolio} -d ${POSTGRES_DB:-portfolio}
-          | gzip > /backups/portfolio-$$(date +%Y%m%d-%H%M).sql.gz;
-        find /backups -name '*.sql.gz' -mtime +14 -delete;
-        sleep 86400;
-      done"
+    # Literal block (`|`), not folded (`>`): in folded style a more-indented
+    # line keeps its newline, which used to put `| gzip` at the start of a
+    # line and made sh fail with `syntax error: unexpected "|"`.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        while true; do
+          pg_dump -h db -U "${POSTGRES_USER:-portfolio}" -d "${POSTGRES_DB:-portfolio}" | gzip > "/backups/portfolio-$$(date +%Y%m%d-%H%M).sql.gz"
+          find /backups -name '*.sql.gz' -mtime +14 -delete
+          sleep 86400
+        done
 
 networks:
   internal:
