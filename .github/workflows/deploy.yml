@@ -39,6 +39,10 @@ jobs:
   build:
     needs: verify
     runs-on: ubuntu-latest
+    # Same environment as `deploy`: the NEXT_PUBLIC_* values are inlined into
+    # the client bundle here, at build time. Without this the job cannot read
+    # environment-scoped secrets and they arrive empty.
+    environment: production
     permissions:
       contents: read
       packages: write
@@ -46,6 +50,24 @@ jobs:
       image: ${{ steps.meta.outputs.tags }}
     steps:
       - uses: actions/checkout@v4
+
+      # These are inlined into the client bundle and cannot be fixed at
+      # runtime. An empty value would silently ship a production build
+      # pointing at localhost, so fail here with a message that says which
+      # secret is missing.
+      - name: Conferir os secrets de build
+        env:
+          SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+          CLOUD_NAME: ${{ secrets.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME }}
+        run: |
+          faltando=""
+          [ -n "$SITE_URL" ] || faltando="${faltando} NEXT_PUBLIC_SITE_URL"
+          [ -n "$CLOUD_NAME" ] || faltando="${faltando} NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME"
+          if [ -n "$faltando" ]; then
+            echo "Secrets vazios ou ausentes:${faltando}" >&2
+            echo "Cadastre-os no repositório ou no environment 'production'." >&2
+            exit 1
+          fi
 
       - uses: docker/setup-buildx-action@v3
 

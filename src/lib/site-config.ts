@@ -6,7 +6,10 @@ export const siteConfig = {
   name: "Natan Lima",
   role: "Desenvolvedor de software",
   locale: "pt-BR",
-  url: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
+  // `||`, not `??`: a build arg that is declared but empty arrives here as ""
+  // rather than undefined, and `new URL("")` throws ERR_INVALID_URL while
+  // collecting page data — which fails the whole build.
+  url: process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
   description:
     "Portfólio de projetos, com o código aberto no GitHub e o contexto de cada decisão técnica.",
 } as const;
