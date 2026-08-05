@@ -43,12 +43,11 @@ services:
       CLOUDINARY_FOLDER: ${CLOUDINARY_FOLDER:-portfolio}
     networks:
       - internal
-      - traefik
-    # No `ports:` on purpose. Traefik reaches the container over its own
-    # network, so nothing about this app is exposed directly on the host.
+    # No `ports:` on purpose. The Traefik on this VPS runs with
+    # `network_mode: host`, so it reaches this container by its bridge IP on
+    # `internal` — nothing about this app is exposed directly on the host.
     labels:
       traefik.enable: "true"
-      traefik.docker.network: ${TRAEFIK_NETWORK:-traefik}
       # Defaults to localhost so `docker compose` works locally without a
       # domain. In production SITE_DOMAIN must be set, or Traefik will not
       # route your real hostname to this container.
@@ -105,11 +104,6 @@ services:
 networks:
   internal:
     driver: bridge
-  # The network your existing Traefik instance already runs on. It is declared
-  # external so this stack joins it instead of trying to create it.
-  traefik:
-    external: true
-    name: ${TRAEFIK_NETWORK:-traefik}
 
 volumes:
   pgdata:
